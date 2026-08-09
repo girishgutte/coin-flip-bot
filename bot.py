@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 import asyncio
 import re
+import aiohttp
 
 from config import *
 from captcha_services import get_service_instance
@@ -20,10 +21,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Discord Bot Setup
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+# Detect token type
+def detect_token_type(token: str) -> str:
+    """Detect the type of Discord token"""
+    if not token or len(token) < 10:
+        return "invalid"
+    
+    # Bot token: starts with numbers, has 2 dots
+    if token[0].isdigit() and token.count('.') == 2:
+        return "bot"
+    
+    # User token: usually longer, different format
+    elif len(token) > 50 and '.' not in token:
+        return "user"
+    
+    # Webhook token: format is numbers.string
+    elif token.count('.') >= 1:
+        parts = token.split('.')
+        if len(parts) >= 2 and parts[0].isdigit():
+            return "webhook"
+    
+    return "unknown"
 
 # Game State
 class GameState:
@@ -60,9 +78,14 @@ class GameState:
 
 game_state = GameState()
 
+# Setup bot with all intents for compatibility with all token types
+intents = discord.Intents.all()
+bot = commands.Bot(command_prefix="!", intents=intents)
+
 @bot.event
 async def on_ready():
     logger.info(f"Bot logged in as {bot.user}")
+    logger.info(f"Token type detected: {detect_token_type(DISCORD_TOKEN)}")
     logger.info(f"Enabled captcha services: {', '.join(ENABLED_SERVICES)}")
     logger.info(f"Watching channel ID: {CHANNEL_ID}")
 
@@ -201,7 +224,7 @@ async def handle_captcha(channel, message) -> bool:
         logger.error("No captcha services configured!")
         return False
     
-    # Extract captcha data from message (this depends on the captcha format)
+    # Extract captcha data from message
     captcha_data = extract_captcha_data(message)
     
     if not captcha_data:
@@ -233,18 +256,11 @@ async def handle_captcha(channel, message) -> bool:
     return False
 
 def extract_captcha_data(message) -> dict:
-    """Extract captcha data from Discord message
-    
-    This needs to be customized based on what captcha format is being used.
-    For now, returning a generic reCAPTCHA v2 structure.
-    """
-    
-    # This is a placeholder - you'll need to customize based on actual captcha format
-    # Looking for patterns like site keys, URLs, etc. in the message
+    """Extract captcha data from Discord message"""
     
     captcha_data = {
-        "type": "NoCaptchaTaskProxyless",  # or appropriate type
-        "websiteURL": "https://discord.com",  # Replace with actual URL if found
+        "type": "NoCaptchaTaskProxyless",
+        "websiteURL": "https://discord.com",
         "websiteKey": extract_sitekey(message.content)
     }
     
@@ -253,10 +269,9 @@ def extract_captcha_data(message) -> dict:
 def extract_sitekey(content: str) -> str:
     """Try to extract sitekey from message content using regex patterns"""
     
-    # Common patterns for sitekeys
     patterns = [
-        r'sitekey["\']?\s*[:=]\s*["\']([^"\']+ )["\']',
-        r'["\']([a-zA-Z0-9_-]{40})["\']',  # Common sitekey length
+        r'sitekey["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+        r'["\']([a-zA-Z0-9_-]{40})["\']',
     ]
     
     for pattern in patterns:
@@ -284,8 +299,14 @@ def main():
         logger.error("CHANNEL_ID not found in .env file!")
         return
     
-    logger.info("Starting Discord Coin Flip Bot...")
+    token_type = detect_token_type(DISCORD_TOKEN)
+    logger.info(f"Starting Discord Coin Flip Bot...")
+    logger.info(f"Token type detected: {token_type}")
     logger.info(f"Configured services: {ENABLED_SERVICES}")
+    
+    if token_type == "invalid":
+        logger.error("Invalid token format!")
+        return
     
     try:
         bot.run(DISCORD_TOKEN)
