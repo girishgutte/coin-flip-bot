@@ -11,12 +11,12 @@ from typing import Optional, Dict, Any
 from config import *
 from captcha_services import get_service_instance
 
-# Setup logging
+# Setup logging with UTF-8 encoding to prevent encoding errors
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(LOG_FILE),
+        logging.FileHandler(LOG_FILE, encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -365,6 +365,8 @@ def main():
     # Verify token
     if not client.verify_token():
         logger.error("Failed to verify token!")
+        logger.error("Make sure your token is correct and not expired.")
+        logger.error("Go to https://discord.com/developers/applications and reset your token.")
         return
     
     # Start game loop
